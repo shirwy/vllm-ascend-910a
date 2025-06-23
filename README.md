@@ -51,7 +51,25 @@ npu-smi info # 910A 八卡
 ssh -i /path/to/key.pem root@223.244.40.1
 
 ### 开发容器环境
-quay.io/ascend/vllm-ascend:v0.9.1rc1 openeuler，具体见[链接](https://vllm-ascend.readthedocs.io/en/latest/quick_start.html)
+
+基础分支: https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc1
+
+使用镜像 vllm-ascend-910a 创建容器，并将本地vllm-ascend映射进去，在容器内编译
+
+```bash
+./build_container.sh
+```
+
+#### 容器内编译
+```bash
+export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+source /usr/local/Ascend/nnal/atb/set_env.sh
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/Ascend/ascend-toolkit/latest/`uname -i`-linux/devlib
+
+python3 -m pip install -v -e . --extra-index https://download.pytorch.org/whl/cpu/
+```
+
 
 ## 项目结构
 MindIE-CANN: 不使用aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
