@@ -1,79 +1,61 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vllm-project/vllm-ascend/main/docs/source/logos/vllm-ascend-logo-text-dark.png">
-    <img alt="vllm-ascend" src="https://raw.githubusercontent.com/vllm-project/vllm-ascend/main/docs/source/logos/vllm-ascend-logo-text-light.png" width=55%>
-  </picture>
-</p>
+# OpDev-910A
 
-<h3 align="center">
-vLLM Ascend Plugin
-</h3>
+## 项目目标、验证方式、进度
 
-<p align="center">
-| <a href="https://www.hiascend.com/en/"><b>About Ascend</b></a> | <a href="https://vllm-ascend.readthedocs.io/en/latest/"><b>Documentation</b></a> | <a href="https://slack.vllm.ai"><b>#sig-ascend</b></a> | <a href="https://discuss.vllm.ai/c/hardware-support/vllm-ascend-support"><b>Users Forum</b></a> | <a href="https://tinyurl.com/vllm-ascend-meeting"><b>Weekly Meeting</b></a> |
-</p>
+| 序号 | 目标 | 验证方式 | 进度 |
+| - | - | - | - |
+| 1 | 支持aclnnSwiGlu算子 | aclnnSwiGlu算子单算子运行通过/在运行Qwen3时可在图模式检测到aclnnSwiGlu算子 | 第1-2周 |
+| 2 | 支持key_cache等算子 | 跑通DeepSeek-R1模型 | 第2-3周 |
+| 3 | 开发小模型所需融合算子 | - | 第4-5周 |
 
-<p align="center">
-<a ><b>English</b></a> | <a href="README.zh.md"><b>中文</b></a>
-</p>
+## 统一开发条件
 
----
-*Latest News* 🔥
-- [2025/03] We hosted the [vLLM Beijing Meetup](https://mp.weixin.qq.com/s/VtxO9WXa5fC-mKqlxNUJUQ) with vLLM team! Please find the meetup slides [here](https://drive.google.com/drive/folders/1Pid6NSFLU43DZRi0EaTcPgXsAzDvbBqF).
-- [2025/02] vLLM community officially created [vllm-project/vllm-ascend](https://github.com/vllm-project/vllm-ascend) repo for running vLLM seamlessly on the Ascend NPU.
-- [2024/12] We are working with the vLLM community to support [[RFC]: Hardware pluggable](https://github.com/vllm-project/vllm/issues/11162).
----
-## Overview
+### 开发硬件环境
+```bash
+uname -a
+# Linux bms-jishuxiaozu 4.19.36-vhulk1907.1.0.h1665.eulerosv2r8.aarch64 #1 SMP Sun Nov 10 17:11:17 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+npu-smi info # 910A 八卡
++------------------------------------------------------------------------------------------------+
+| npu-smi 24.1.0                   Version: 24.1.0                                               |
++---------------------------+---------------+----------------------------------------------------+
+| NPU   Name                | Health        | Power(W)    Temp(C)           Hugepages-Usage(page)|
+| Chip                      | Bus-Id        | AICore(%)   Memory-Usage(MB)  HBM-Usage(MB)        |
++===========================+===============+====================================================+
+| 0     910B                | OK            | 70.0        34                0    / 0             |
+| 0                         | 0000:C1:00.0  | 0           1197 / 13553      1365 / 32768         |
++===========================+===============+====================================================+
+| 1     910B                | OK            | 66.9        34                0    / 0             |
+| 0                         | 0000:81:00.0  | 0           2411 / 15665      4    / 32768         |
++===========================+===============+====================================================+
+| 2     910B                | OK            | 69.8        34                0    / 0             |
+| 0                         | 0000:41:00.0  | 0           2306 / 15665      4    / 32768         |
++===========================+===============+====================================================+
+| 3     910B                | OK            | 67.2        33                0    / 0             |
+| 0                         | 0000:01:00.0  | 0           2472 / 15567      3    / 32768         |
++===========================+===============+====================================================+
+| 4     910B                | OK            | 68.9        33                0    / 0             |
+| 0                         | 0000:C2:00.0  | 0           2904 / 13553      3    / 32768         |
++===========================+===============+====================================================+
+| 5     910B                | OK            | 66.3        34                0    / 0             |
+| 0                         | 0000:82:00.0  | 0           1694 / 15665      5    / 32768         |
++===========================+===============+====================================================+
+| 6     910B                | OK            | 70.1        34                0    / 0             |
+| 0                         | 0000:42:00.0  | 0           1987 / 15665      5    / 32768         |
++===========================+===============+====================================================+
+| 7     910B                | OK            | 65.6        33                0    / 0             |
+| 0                         | 0000:02:00.0  | 0           1777 / 15567      4    / 32768         |
++===========================+===============+====================================================+
+```
 
-vLLM Ascend (`vllm-ascend`) is a community maintained hardware plugin for running vLLM seamlessly on the Ascend NPU.
+### 远程连接方式
+ssh -i /path/to/key.pem root@223.244.40.1
 
-It is the recommended approach for supporting the Ascend backend within the vLLM community. It adheres to the principles outlined in the [[RFC]: Hardware pluggable](https://github.com/vllm-project/vllm/issues/11162), providing a hardware-pluggable interface that decouples the integration of the Ascend NPU with vLLM.
+### 开发容器环境
+quay.io/ascend/vllm-ascend:v0.9.1rc1 openeuler，具体见[链接](https://vllm-ascend.readthedocs.io/en/latest/quick_start.html)
 
-By using vLLM Ascend plugin, popular open-source models, including Transformer-like, Mixture-of-Expert, Embedding, Multi-modal LLMs can run seamlessly on the Ascend NPU.
+## 项目结构
+MindIE-CANN: 不使用aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
+vLLM-CANN: 开发aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
 
-## Prerequisites
 
-- Hardware: Atlas 800I A2 Inference series, Atlas A2 Training series
-- OS: Linux
-- Software:
-  * Python >= 3.9, < 3.12
-  * CANN >= 8.1.RC1
-  * PyTorch >= 2.5.1, torch-npu >= 2.5.1.post1.dev20250619
-  * vLLM (the same version as vllm-ascend)
 
-## Getting Started
-
-Please refer to [QuickStart](https://vllm-ascend.readthedocs.io/en/latest/quick_start.html) and [Installation](https://vllm-ascend.readthedocs.io/en/latest/installation.html) for more details.
-
-## Contributing
-See [CONTRIBUTING](https://vllm-ascend.readthedocs.io/en/main/developer_guide/contributing.html) for more details, which is a step-by-step guide to help you set up development environment, build and test.
-
-We welcome and value any contributions and collaborations:
-- Please let us know if you encounter a bug by [filing an issue](https://github.com/vllm-project/vllm-ascend/issues)
-- Please use [User forum](https://discuss.vllm.ai/c/hardware-support/vllm-ascend-support) for usage questions and help.
-
-## Branch
-
-vllm-ascend has main branch and dev branch.
-
-- **main**: main branch，corresponds to the vLLM main branch, and is continuously monitored for quality through Ascend CI.
-- **vX.Y.Z-dev**: development branch, created with part of new releases of vLLM. For example, `v0.7.3-dev` is the dev branch for vLLM `v0.7.3` version.
-
-Below is maintained branches:
-
-| Branch     | Status       | Note                                 |
-|------------|--------------|--------------------------------------|
-| main       | Maintained   | CI commitment for vLLM main branch and vLLM 0.9.x branch   |
-| v0.7.1-dev | Unmaintained | Only doc fixed is allowed |
-| v0.7.3-dev | Maintained   | CI commitment for vLLM 0.7.3 version |
-
-Please refer to [Versioning policy](https://vllm-ascend.readthedocs.io/en/main/developer_guide/versioning_policy.html) for more details.
-
-## Weekly Meeting
-
-- vLLM Ascend Weekly Meeting: https://tinyurl.com/vllm-ascend-meeting
-- Wednesday, 15:00 - 16:00 (UTC+8, [Convert to your timezone](https://dateful.com/convert/gmt8?t=15))
-
-## License
-
-Apache License 2.0, as found in the [LICENSE](./LICENSE) file.
