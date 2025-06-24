@@ -24,6 +24,8 @@
 #include "torch_npu/csrc/aten/common/from_blob.h"
 
 namespace vllm_ascend {
+  extern void swiglu_impl(AscendType type, void *stream, void *input, void *output, int dim, int64_t stride, int64_t out_stride, int64_t num_tokens, uint32_t aiv_num);
+
   extern void rotary_embedding_impl(AscendType type, bool isNeox, void *stream, int64_t *positions, void *queryDst,
     void *keyDst, void *query, void *key, void *cosSinCache, const int rotDim,
     const int64_t queryStride, const int64_t keyStride, const int64_t dstQueryStride,
@@ -60,16 +62,16 @@ namespace vllm_ascend {
     auto new_tensor = at_npu::native::from_blob(data_ptr, sizes, strides, options);
     return new_tensor;
   }
-    extern void launch_advance_step_flashattn(
-        void* stream,
-        int64_t num_seqs,
-        int64_t num_queries,
-        int64_t block_size,
-        int64_t* input_tokens_ptr,
-        int64_t* sampled_token_ids_ptr,
-        int64_t* input_positions_ptr,
-        int32_t* seq_lens_ptr,
-        int32_t* slot_mapping_ptr,
-        int32_t* block_tables_ptr,
-        int64_t block_tables_stride);
+    // extern void launch_advance_step_flashattn(
+    //     void* stream,
+    //     int64_t num_seqs,
+    //     int64_t num_queries,
+    //     int64_t block_size,
+    //     int64_t* input_tokens_ptr,
+    //     int64_t* sampled_token_ids_ptr,
+    //     int64_t* input_positions_ptr,
+    //     int32_t* seq_lens_ptr,
+    //     int32_t* slot_mapping_ptr,
+    //     int32_t* block_tables_ptr,
+    //     int64_t block_tables_stride);
 }

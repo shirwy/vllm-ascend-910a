@@ -231,77 +231,83 @@ void verify_tensor(std::string const& name, at::Tensor const& t,
 }
 
 
-void advance_step_flashattn_ascendc(
-    int64_t num_seqs, int64_t num_queries, int64_t block_size,
-    at::Tensor& input_tokens,
-    at::Tensor& sampled_token_ids,
-    at::Tensor& input_positions,
-    at::Tensor& seq_lens,
-    at::Tensor& slot_mapping,
-    at::Tensor& block_tables
-){
-    // Verify all tensors
-    verify_tensor("input_tokens", input_tokens, num_seqs, -1, at::kLong);
-    verify_tensor("sampled_token_ids", sampled_token_ids, num_queries, 1,at::kLong);
-    verify_tensor("input_positions", input_positions, num_seqs, -1, at::kLong);
-    verify_tensor("seq_lens", seq_lens, num_seqs, -1, at::kInt);
-    verify_tensor("slot_mapping", slot_mapping, num_seqs, -1, at::kInt);
-    verify_tensor("block_tables", block_tables, num_seqs, -1, at::kInt);
+// void advance_step_flashattn_ascendc(
+//     int64_t num_seqs, int64_t num_queries, int64_t block_size,
+//     at::Tensor& input_tokens,
+//     at::Tensor& sampled_token_ids,
+//     at::Tensor& input_positions,
+//     at::Tensor& seq_lens,
+//     at::Tensor& slot_mapping,
+//     at::Tensor& block_tables
+// ){
+//     // Verify all tensors
+//     verify_tensor("input_tokens", input_tokens, num_seqs, -1, at::kLong);
+//     verify_tensor("sampled_token_ids", sampled_token_ids, num_queries, 1,at::kLong);
+//     verify_tensor("input_positions", input_positions, num_seqs, -1, at::kLong);
+//     verify_tensor("seq_lens", seq_lens, num_seqs, -1, at::kInt);
+//     verify_tensor("slot_mapping", slot_mapping, num_seqs, -1, at::kInt);
+//     verify_tensor("block_tables", block_tables, num_seqs, -1, at::kInt);
 
 
-    int64_t* input_tokens_ptr = input_tokens.data_ptr<int64_t>();
-    int64_t* sampled_token_ids_ptr = sampled_token_ids.data_ptr<int64_t>();
-    int64_t* input_positions_ptr = input_positions.data_ptr<int64_t>();
-    int32_t* seq_lens_ptr = seq_lens.data_ptr<int32_t>();
-    int32_t* slot_mapping_ptr = slot_mapping.data_ptr<int32_t>();
-    int32_t* block_tables_ptr =  block_tables.data_ptr<int32_t>();
+//     int64_t* input_tokens_ptr = input_tokens.data_ptr<int64_t>();
+//     int64_t* sampled_token_ids_ptr = sampled_token_ids.data_ptr<int64_t>();
+//     int64_t* input_positions_ptr = input_positions.data_ptr<int64_t>();
+//     int32_t* seq_lens_ptr = seq_lens.data_ptr<int32_t>();
+//     int32_t* slot_mapping_ptr = slot_mapping.data_ptr<int32_t>();
+//     int32_t* block_tables_ptr =  block_tables.data_ptr<int32_t>();
 
 
-    int32_t device_id;
-    aclrtGetDevice(&device_id);
-    auto npu_stream = c10_npu::getCurrentNPUStream(device_id);
-    aclrtStream stream = npu_stream.stream();
+//     int32_t device_id;
+//     aclrtGetDevice(&device_id);
+//     auto npu_stream = c10_npu::getCurrentNPUStream(device_id);
+//     aclrtStream stream = npu_stream.stream();
 
-    // aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+//     // aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+//     at_npu::native::OpCommand cmd;
+//     cmd.Name("advance_step_flashattn_ascendc");
+//     cmd.SetCustomHandler([stream, num_seqs, num_queries,
+//                           block_size, input_tokens_ptr, sampled_token_ids_ptr,
+//                           input_positions_ptr, seq_lens_ptr, slot_mapping_ptr,
+//                           block_tables_ptr, block_tables]() -> int {
+//         launch_advance_step_flashattn(stream,
+//                                     num_seqs,
+//                                     num_queries,
+//                                     block_size,
+//                                     input_tokens_ptr,
+//                                     sampled_token_ids_ptr,
+//                                     input_positions_ptr,
+//                                     seq_lens_ptr,
+//                                     slot_mapping_ptr,
+//                                     block_tables_ptr,
+//                                     block_tables.stride(0));
+//         return 0;
+//     });
+//     cmd.Run();
+//     return ;
+// }
+
+at::Tensor _swiglu_fused(at::Tensor& x) {
+    at::ScalarType scalar_type = x.scalar_type();
+    at::Tensor y = at::empty_like(x);
+    int64_t num_tokens = x.numel() / x.size(-1);
+    uint8_t* x_ptr = x.data_ptr<uint8_t>();
+    uint8_t* y_ptr = y.data_ptr<uint8_t>();
+    int dim = x.size(-1) / 2;
+    int64_t stride = x.stride(-2);
+    int64_t out_stride = y.stride(-2);
+    aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
     at_npu::native::OpCommand cmd;
-    cmd.Name("advance_step_flashattn_ascendc");
-    cmd.SetCustomHandler([stream, num_seqs, num_queries,
-                          block_size, input_tokens_ptr, sampled_token_ids_ptr,
-                          input_positions_ptr, seq_lens_ptr, slot_mapping_ptr,
-                          block_tables_ptr, block_tables]() -> int {
-        launch_advance_step_flashattn(stream,
-                                    num_seqs,
-                                    num_queries,
-                                    block_size,
-                                    input_tokens_ptr,
-                                    sampled_token_ids_ptr,
-                                    input_positions_ptr,
-                                    seq_lens_ptr,
-                                    slot_mapping_ptr,
-                                    block_tables_ptr,
-                                    block_tables.stride(0));
+    cmd.Name("_swiglu");
+    cmd.SetCustomHandler([scalar_type, stream, x_ptr, y_ptr, num_tokens, dim, stride, out_stride]() -> int {
+        auto dtype_num = get_dtype_from_torch(scalar_type);
+        fe::PlatFormInfos platform_infos;
+        int device_id = 0;
+        fe::PlatformInfoManager::GeInstance().GetRuntimePlatformInfosByDevice(device_id, platform_infos);
+        uint32_t aiv_num = platform_infos.GetCoreNumByType("aiv");
+        swiglu_impl(dtype_num, stream, x_ptr, y_ptr, dim, stride, out_stride, num_tokens, aiv_num);
         return 0;
     });
     cmd.Run();
-    return ;
-}
-
-at::Tensor _swiglu(at::Tensor& x) {
-    at::ScalarType scalar_type = x.scalar_type();
-    void* x_ptr = x.data_ptr();
-    auto y = x + 1.0;
-    // aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
-    // at_npu::native::OpCommand cmd;
-    // cmd.Name("_swiglu");
-    // cmd.SetCustomHandler([scalar_type, stream, x_ptr]() -> int {
-    //     auto dtype_num = get_dtype_from_torch(scalar_type);
-    //     fe::PlatFormInfos platform_infos;
-    //     int device_id = 0;
-    //     fe::PlatformInfoManager::GeInstance().GetRuntimePlatformInfosByDevice(device_id, platform_infos);
-    //     launch_swiglsu(stream, x_ptr, x.numel());
-    //     return 0;
-    // });
-    // cmd.Run();
     return y;
 }
 
@@ -330,14 +336,14 @@ TORCH_LIBRARY_EXPAND(_C, ops)
         "                         int added_vocab_end_index) -> (Tensor masked_input, Tensor mask)");
     ops.impl("get_masked_input_and_mask", torch::kPrivateUse1, &vllm_ascend::get_masked_input_and_mask);
 
-    ops.def(
-        "advance_step_flashattn_ascendc(int num_seqs, int num_queries, int block_size,"
-        "                               Tensor! input_tokens, Tensor! sampled_token_ids, Tensor! input_positions,"
-        "                               Tensor! seq_lens, Tensor! slot_mapping, Tensor! block_tables) -> ()");
-    ops.impl("advance_step_flashattn_ascendc", torch::kPrivateUse1, &vllm_ascend::advance_step_flashattn_ascendc);
+    // ops.def(
+    //     "advance_step_flashattn_ascendc(int num_seqs, int num_queries, int block_size,"
+    //     "                               Tensor! input_tokens, Tensor! sampled_token_ids, Tensor! input_positions,"
+    //     "                               Tensor! seq_lens, Tensor! slot_mapping, Tensor! block_tables) -> ()");
+    // ops.impl("advance_step_flashattn_ascendc", torch::kPrivateUse1, &vllm_ascend::advance_step_flashattn_ascendc);
 
-    ops.def("_swiglu(Tensor x) -> Tensor");
-    ops.impl("_swiglu", torch::kPrivateUse1, &vllm_ascend::_swiglu);
+    ops.def("_swiglu_fused(Tensor x) -> Tensor");
+    ops.impl("_swiglu_fused", torch::kPrivateUse1, &vllm_ascend::_swiglu_fused);
 }
 
 REGISTER_EXTENSION(_C)
