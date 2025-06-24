@@ -24,10 +24,80 @@
 #include "acl/acl.h"
 #include "tiling/platform/platform_ascendc.h"
 #include "aclnn/opdev/platform.h"
+#include <vector>
 #include "ops.h"
 #include "utils.h"
 
 namespace vllm_ascend {
+
+// SwiGLU implementation
+template <typename T>
+void swiglu_impl_template(
+    void* stream,
+    void* input_ptr,
+    void* output_ptr,
+    const int64_t size,
+    const uint32_t loop_cnt,
+    const uint32_t aiv_num) {
+    printf("[SwiGLU DEBUG] swiglu_impl_template called, size=%ld\n", size);
+    int64_t input_size = size;
+    int64_t output_size = input_size / 2;
+    if (input_size <= 0 || output_size <= 0 || input_ptr == nullptr || output_ptr == nullptr) {
+        printf("[SwiGLU DEBUG] Invalid input/output pointers or sizes\n");
+        return;
+    }
+    if (input_size % 2 != 0) {
+        printf("[SwiGLU DEBUG] Input size is not even: %ld\n", input_size);
+        return;
+    }
+    T* input_data = static_cast<T*>(input_ptr);
+    T* output_data = static_cast<T*>(output_ptr);
+    for (int64_t i = 0; i < output_size; ++i) {
+        T x1 = input_data[i];
+        T x2 = input_data[i + output_size];
+        T sigmoid_x1;
+        if constexpr (std::is_same_v<T, c10::Half>) {
+            float x1_float = static_cast<float>(x1);
+            float sigmoid_x1_float = 1.0f / (1.0f + std::exp(-x1_float));
+            sigmoid_x1 = static_cast<T>(sigmoid_x1_float);
+        } else {
+            sigmoid_x1 = static_cast<T>(1.0f / (1.0f + std::exp(-static_cast<float>(x1))));
+        }
+        T swish_x1 = x1 * sigmoid_x1;
+        output_data[i] = swish_x1 * x2;
+        if (i < 4) {
+            printf("[SwiGLU DEBUG] i=%ld: x1=%.6f, x2=%.6f, out=%.6f\n", i, (float)x1, (float)x2, (float)output_data[i]);
+        }
+    }
+    printf("[SwiGLU DEBUG] Loop finished, about to synchronize NPU stream\n");
+    // NPU Tensor写入后，尝试同步
+    c10_npu::NPUStream npu_stream = c10_npu::getCurrentNPUStream();
+    npu_stream.synchronize();
+    printf("[SwiGLU DEBUG] NPU stream synchronized after write\n");
+    printf("[SwiGLU DEBUG] swiglu_impl_template finished\n");
+}
+
+void swiglu_impl(
+    AscendType type,
+    void* stream,
+    void* input_ptr,
+    void* output_ptr,
+    const int64_t size,
+    const uint32_t loop_cnt,
+    const uint32_t aiv_num) {
+    printf("[SwiGLU DEBUG] swiglu_impl dispatch, type=%d\n", (int)type);
+    switch (type) {
+        case AscendType::FP32:
+            swiglu_impl_template<float>(stream, input_ptr, output_ptr, size, loop_cnt, aiv_num);
+            break;
+        case AscendType::FP16:
+            swiglu_impl_template<c10::Half>(stream, input_ptr, output_ptr, size, loop_cnt, aiv_num);
+            break;
+        default:
+            printf("[SwiGLU DEBUG] Unsupported type\n");
+            break;
+    }
+}
 
 std::tuple<at::Tensor, at::Tensor> rotary_embedding(at::Tensor &positions, at::Tensor &query, at::Tensor &key,
     int64_t head_size, at::Tensor &cos_sin_cache,  bool is_neox)
@@ -308,6 +378,29 @@ at::Tensor _swiglu_fused(at::Tensor& x) {
         return 0;
     });
     cmd.Run();
+    return ;
+}
+
+at::Tensor _swiglu(at::Tensor& x) {
+    TORCH_CHECK(x.dim() >= 1, "_swiglu: input must have at least 1 dimension");
+    TORCH_CHECK(x.is_contiguous(), "_swiglu: input must be contiguous");
+    int64_t last_dim = x.size(-1);
+    TORCH_CHECK(last_dim % 2 == 0, "_swiglu: last dimension must be even, got ", last_dim);
+    TORCH_CHECK(x.device().type() == c10::DeviceType::PrivateUse1, "_swiglu: input must be on NPU device");
+    at::ScalarType scalar_type = x.scalar_type();
+    TORCH_CHECK(scalar_type == at::kFloat || scalar_type == at::kHalf, "_swiglu: only float32/float16 supported");
+
+    // NPU上分块
+    std::vector<at::Tensor> chunks = x.chunk(2, -1);
+    at::Tensor x1 = chunks[0];
+    at::Tensor x2 = chunks[1];
+
+    // NPU上swish激活
+    at::Tensor swish = x1 * x1.sigmoid();
+
+    // NPU上逐元素乘
+    at::Tensor y = swish * x2;
+
     return y;
 }
 
@@ -341,6 +434,9 @@ TORCH_LIBRARY_EXPAND(_C, ops)
     //     "                               Tensor! input_tokens, Tensor! sampled_token_ids, Tensor! input_positions,"
     //     "                               Tensor! seq_lens, Tensor! slot_mapping, Tensor! block_tables) -> ()");
     // ops.impl("advance_step_flashattn_ascendc", torch::kPrivateUse1, &vllm_ascend::advance_step_flashattn_ascendc);
+
+    ops.def("_swiglu(Tensor x) -> Tensor");
+    ops.impl("_swiglu", torch::kPrivateUse1, &vllm_ascend::_swiglu);
 
     ops.def("_swiglu_fused(Tensor x) -> Tensor");
     ops.impl("_swiglu_fused", torch::kPrivateUse1, &vllm_ascend::_swiglu_fused);

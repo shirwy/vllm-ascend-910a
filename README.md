@@ -54,13 +54,15 @@ ssh -i /path/to/key.pem root@223.244.40.1
 
 基础分支: https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc1
 
-使用镜像 vllm-ascend-910a 创建容器，并将本地vllm-ascend映射进去，在容器内编译
+配置流程：使用镜像 vllm-ascend-910a 创建容器，并将本地vllm-ascend映射进去，在容器内编译
 
+进入OpDev-910A路径后运行
 ```bash
 ./build_container.sh
 ```
 
-#### 容器内编译
+#### 
+进入容器后运行
 ```bash
 export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
@@ -91,6 +93,7 @@ print(y)
 
 ## 项目结构
 MindIE-CANN: 不使用aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
+
 vLLM-CANN: 开发aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
 
 
