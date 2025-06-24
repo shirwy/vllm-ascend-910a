@@ -10,19 +10,19 @@ def swiglu_cpu(x):
 def debug_test():
     """Debug test to see detailed output and compare NPU/CPU results"""
     
-    print("🔍 Debug SwiGLU test...")
+    print("Debug SwiGLU test...")
     
     try:
         import torch
         import vllm_ascend.vllm_ascend_C
         
-        print("✅ Successfully imported modules")
+        print("Successfully imported modules")
         
         # Check if function is available
         if hasattr(torch.ops._C, '_swiglu'):
-            print("✅ _swiglu function is available")
+            print("_swiglu function is available")
         else:
-            print("❌ _swiglu function is not available")
+            print("_swiglu function is not available")
             return False
         
         # Create small test tensor
@@ -32,22 +32,22 @@ def debug_test():
         
         # Call custom NPU function
         try:
-            print("\n🚀 Calling _swiglu function...")
+            print("\nCalling _swiglu function...")
             y_npu = torch.ops._C._swiglu(x_npu)
-            print(f"✅ Function call successful: {x_npu.shape} -> {y_npu.shape}")
+            print(f"Function call successful: {x_npu.shape} -> {y_npu.shape}")
             print(f"Output values: {y_npu[0, 0, :]}")
             if torch.all(y_npu == 0):
-                print("⚠️  Output is all zeros - implementation may have issues")
+                print("Output is all zeros - implementation may have issues")
             else:
-                print("✅ Output contains non-zero values")
+                print("Output contains non-zero values")
         except Exception as e:
-            print(f"❌ Function call failed: {e}")
+            print(f"Function call failed: {e}")
             import traceback
             traceback.print_exc()
             return False
         
         # Compare with CPU result
-        print("\n🔍 Comparing with CPU PyTorch implementation...")
+        print("\nComparing with CPU PyTorch implementation...")
         x_cpu = x_npu.cpu()
         y_cpu = swiglu_cpu(x_cpu)
         y_npu_cpu = y_npu.cpu()
@@ -58,10 +58,10 @@ def debug_test():
         print(f"Max difference: {diff.max().item():.6e}")
         print(f"Mean difference: {diff.mean().item():.6e}")
         
-        print("\n🎉 Debug test completed!")
+        print("\nDebug test completed!")
         return True
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -69,6 +69,6 @@ def debug_test():
 if __name__ == "__main__":
     success = debug_test()
     if success:
-        print("\n🎉 Debug test completed!")
+        print("\nDebug test completed!")
     else:
-        print("\n❌ Debug test failed.") 
+        print("\nDebug test failed.") 
