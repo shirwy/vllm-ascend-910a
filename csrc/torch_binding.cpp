@@ -285,6 +285,26 @@ void advance_step_flashattn_ascendc(
     cmd.Run();
     return ;
 }
+
+at::Tensor _swiglu(at::Tensor& x) {
+    at::ScalarType scalar_type = x.scalar_type();
+    void* x_ptr = x.data_ptr();
+    auto y = x + 1.0;
+    // aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+    // at_npu::native::OpCommand cmd;
+    // cmd.Name("_swiglu");
+    // cmd.SetCustomHandler([scalar_type, stream, x_ptr]() -> int {
+    //     auto dtype_num = get_dtype_from_torch(scalar_type);
+    //     fe::PlatFormInfos platform_infos;
+    //     int device_id = 0;
+    //     fe::PlatformInfoManager::GeInstance().GetRuntimePlatformInfosByDevice(device_id, platform_infos);
+    //     launch_swiglsu(stream, x_ptr, x.numel());
+    //     return 0;
+    // });
+    // cmd.Run();
+    return y;
+}
+
 } // namespace vllm_ascend
 
 TORCH_LIBRARY_EXPAND(_C, ops)
@@ -315,6 +335,9 @@ TORCH_LIBRARY_EXPAND(_C, ops)
         "                               Tensor! input_tokens, Tensor! sampled_token_ids, Tensor! input_positions,"
         "                               Tensor! seq_lens, Tensor! slot_mapping, Tensor! block_tables) -> ()");
     ops.impl("advance_step_flashattn_ascendc", torch::kPrivateUse1, &vllm_ascend::advance_step_flashattn_ascendc);
+
+    ops.def("_swiglu(Tensor x) -> Tensor");
+    ops.impl("_swiglu", torch::kPrivateUse1, &vllm_ascend::_swiglu);
 }
 
 REGISTER_EXTENSION(_C)

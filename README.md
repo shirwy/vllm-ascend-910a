@@ -71,6 +71,24 @@ python3 -m pip install -v -e . --extra-index https://download.pytorch.org/whl/cp
 ```
 
 
+### 添加新算子以及编译
+
+在`csrc`目录下添加新算子，并在`torch_binding.cpp`下进行binding，具体可见`orch_binding.cpp`下的的`_swiglu`实现以及此目录下的其他算子实现
+
+编译命令跟`容器内编译`命令一样，在容器内执行，重新编译整个vllm_ascend
+
+简单测试算子正确性可使用如下命令 (在容器内)
+```bash
+import torch
+import vllm_ascend.vllm_ascend_C
+
+
+x = torch.randn(2, 2, device=0, dtype=torch.float)
+print(x)
+y = torch.ops._C._swiglu(x)
+print(y)
+```
+
 ## 项目结构
 MindIE-CANN: 不使用aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
 vLLM-CANN: 开发aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
