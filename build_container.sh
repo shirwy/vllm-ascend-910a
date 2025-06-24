@@ -6,7 +6,8 @@ export PROJECT_DIR=$(dirname $(realpath "${BASH_SOURCE[0]}"))
 
 export IMAGE=vllm-ascend-910a
 
-docker run  \
+docker rm -f $NAME || true
+docker run \
 --name $NAME \
 --privileged \
 --device $DEVICE \
