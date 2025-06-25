@@ -25,8 +25,8 @@ def silu_and_mul_forward_oot(self, x: torch.Tensor) -> torch.Tensor:
     import torch_npu
 
     if is_310p():
-        assert False, "310p is not supported"
-        out = torch_npu.npu_swiglu(x.to(torch.float32)).to(torch.float16)
+        # out = torch_npu.npu_swiglu(x.to(torch.float32)).to(torch.float16)
+        out = torch.ops._C._swiglu_fused(x)
     else:
         out = torch.ops._C._swiglu_fused(x)
         # out = torch.ops._C._swiglu(x)

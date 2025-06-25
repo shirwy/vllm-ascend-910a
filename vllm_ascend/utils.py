@@ -82,7 +82,7 @@ _SOC_VERSION = _get_soc_version()
 
 
 def is_310p():
-    return _SOC_VERSION in SOC_VERSION_INFERENCE_SERIES
+    return _SOC_VERSION in SOC_VERSION_INFERENCE_SERIES or _SOC_VERSION ==  "Ascend910B"
 
 
 class NullHandle:
