@@ -891,10 +891,11 @@ class AscendAttentionBackendImpl(AttentionImpl):
                             mask = torch_npu.npu_format_cast(
                                 mask.contiguous(), ACL_FORMAT_FRACTAL_NZ)
                         torch_npu._npu_flash_attention(
-                            query=query,
-                            key=key,
-                            value=value,
-                            mask=mask,
+                            query=query.view(-1, self.num_heads, self.head_size),
+                            key=key.view(-1, self.num_kv_heads, self.head_size),
+                            value=value.view(-1, self.num_kv_heads, self.head_size),
+                            mask=mask.unsqueeze(0).expand(
+                                self.seq_lens_tensor_cpu.size(0), -1, -1),
                             seq_len=self.seq_lens_tensor_cpu,
                             scale_value=self.scale,
                             num_heads=self.num_heads,
