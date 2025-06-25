@@ -30,75 +30,6 @@
 
 namespace vllm_ascend {
 
-// SwiGLU implementation
-template <typename T>
-void swiglu_impl_template(
-    void* stream,
-    void* input_ptr,
-    void* output_ptr,
-    const int64_t size,
-    const uint32_t loop_cnt,
-    const uint32_t aiv_num) {
-    printf("[SwiGLU DEBUG] swiglu_impl_template called, size=%ld\n", size);
-    int64_t input_size = size;
-    int64_t output_size = input_size / 2;
-    if (input_size <= 0 || output_size <= 0 || input_ptr == nullptr || output_ptr == nullptr) {
-        printf("[SwiGLU DEBUG] Invalid input/output pointers or sizes\n");
-        return;
-    }
-    if (input_size % 2 != 0) {
-        printf("[SwiGLU DEBUG] Input size is not even: %ld\n", input_size);
-        return;
-    }
-    T* input_data = static_cast<T*>(input_ptr);
-    T* output_data = static_cast<T*>(output_ptr);
-    for (int64_t i = 0; i < output_size; ++i) {
-        T x1 = input_data[i];
-        T x2 = input_data[i + output_size];
-        T sigmoid_x1;
-        if constexpr (std::is_same_v<T, c10::Half>) {
-            float x1_float = static_cast<float>(x1);
-            float sigmoid_x1_float = 1.0f / (1.0f + std::exp(-x1_float));
-            sigmoid_x1 = static_cast<T>(sigmoid_x1_float);
-        } else {
-            sigmoid_x1 = static_cast<T>(1.0f / (1.0f + std::exp(-static_cast<float>(x1))));
-        }
-        T swish_x1 = x1 * sigmoid_x1;
-        output_data[i] = swish_x1 * x2;
-        if (i < 4) {
-            printf("[SwiGLU DEBUG] i=%ld: x1=%.6f, x2=%.6f, out=%.6f\n", i, (float)x1, (float)x2, (float)output_data[i]);
-        }
-    }
-    printf("[SwiGLU DEBUG] Loop finished, about to synchronize NPU stream\n");
-    // NPU Tensor写入后，尝试同步
-    c10_npu::NPUStream npu_stream = c10_npu::getCurrentNPUStream();
-    npu_stream.synchronize();
-    printf("[SwiGLU DEBUG] NPU stream synchronized after write\n");
-    printf("[SwiGLU DEBUG] swiglu_impl_template finished\n");
-}
-
-void swiglu_impl(
-    AscendType type,
-    void* stream,
-    void* input_ptr,
-    void* output_ptr,
-    const int64_t size,
-    const uint32_t loop_cnt,
-    const uint32_t aiv_num) {
-    printf("[SwiGLU DEBUG] swiglu_impl dispatch, type=%d\n", (int)type);
-    switch (type) {
-        case AscendType::FP32:
-            swiglu_impl_template<float>(stream, input_ptr, output_ptr, size, loop_cnt, aiv_num);
-            break;
-        case AscendType::FP16:
-            swiglu_impl_template<c10::Half>(stream, input_ptr, output_ptr, size, loop_cnt, aiv_num);
-            break;
-        default:
-            printf("[SwiGLU DEBUG] Unsupported type\n");
-            break;
-    }
-}
-
 std::tuple<at::Tensor, at::Tensor> rotary_embedding(at::Tensor &positions, at::Tensor &query, at::Tensor &key,
     int64_t head_size, at::Tensor &cos_sin_cache,  bool is_neox)
 {
@@ -358,16 +289,22 @@ void verify_tensor(std::string const& name, at::Tensor const& t,
 
 at::Tensor _swiglu_fused(at::Tensor& x) {
     at::ScalarType scalar_type = x.scalar_type();
-    at::Tensor y = at::empty_like(x);
+
+    auto x_sizes = x.sizes();
+    std::vector<int64_t> y_sizes(x_sizes.begin(), x_sizes.end());
+    y_sizes.back() = y_sizes.back() / 2;  // 最后一维除以2
+    at::Tensor y = at::zeros(y_sizes, x.options());
+
+
     int64_t num_tokens = x.numel() / x.size(-1);
-    uint8_t* x_ptr = x.data_ptr<uint8_t>();
-    uint8_t* y_ptr = y.data_ptr<uint8_t>();
+    uint8_t* x_ptr = reinterpret_cast<uint8_t*>(x.data_ptr());
+    uint8_t* y_ptr = reinterpret_cast<uint8_t*>(y.data_ptr());
     int dim = x.size(-1) / 2;
     int64_t stride = x.stride(-2);
     int64_t out_stride = y.stride(-2);
     aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
     at_npu::native::OpCommand cmd;
-    cmd.Name("_swiglu");
+    cmd.Name("_swiglu_fused");
     cmd.SetCustomHandler([scalar_type, stream, x_ptr, y_ptr, num_tokens, dim, stride, out_stride]() -> int {
         auto dtype_num = get_dtype_from_torch(scalar_type);
         fe::PlatFormInfos platform_infos;
@@ -378,7 +315,7 @@ at::Tensor _swiglu_fused(at::Tensor& x) {
         return 0;
     });
     cmd.Run();
-    return ;
+    return y;
 }
 
 at::Tensor _swiglu(at::Tensor& x) {
