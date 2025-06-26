@@ -181,7 +181,8 @@ def fused_experts_with_mc2(
 
     # TODO: Remove this in the future.
     gate_up_out = torch.cat(gate_up_out_list, dim=0)
-    gate_up_out = torch_npu.npu_swiglu(gate_up_out)
+    # gate_up_out = torch_npu.npu_swiglu(gate_up_out)
+    gate_up_out = torch.ops._C._swiglu_fused(gate_up_out)
 
     w2 = w2.transpose(1, 2)
     down_out_list = torch_npu.npu_grouped_matmul(
@@ -271,7 +272,8 @@ def apply_mlp(hidden_states_wrapper: List[torch.Tensor],
     )
 
     hidden_states = torch.cat(hidden_states, dim=0)
-    hidden_states = torch_npu.npu_swiglu(hidden_states)
+    # hidden_states = torch_npu.npu_swiglu(hidden_states)
+    hidden_states = torch.ops._C._swiglu_fused(hidden_states)
 
     w2 = w2.transpose(1, 2)
     hidden_states = torch_npu.npu_grouped_matmul(
@@ -375,7 +377,8 @@ def fused_experts_with_all2all(
 
     # TODO: Remove this in the future.
     hidden_states = torch.cat(gate_up_out_list, dim=0)
-    hidden_states = torch_npu.npu_swiglu(hidden_states)
+    # hidden_states = torch_npu.npu_swiglu(hidden_states)
+    hidden_states = torch.ops._C._swiglu_fused(hidden_states)
 
     w2 = w2.transpose(1, 2)
     down_out_list = torch_npu.npu_grouped_matmul(
@@ -615,8 +618,9 @@ def fused_experts_310p(
         group_list=group_list,
     )[0]
 
-    gate_up_out = torch_npu.npu_swiglu(gate_up_out.to(torch.float32)).to(
-        torch.float16)
+    gate_up_out = torch.ops._C._swiglu_fused(gate_up_out.to(torch.float32)).to(torch.float16)
+    # gate_up_out = torch_npu.npu_swiglu(gate_up_out.to(torch.float32)).to(
+    #     torch.float16)
     gate_up_out *= topk_scales
 
     w2 = w2.transpose(1, 2)
@@ -762,7 +766,8 @@ def fused_experts(
 
     # TODO: Remove this in the future.
     gate_up_out = torch.cat(gate_up_out_list, dim=0)
-    gate_up_out = torch_npu.npu_swiglu(gate_up_out)
+    # gate_up_out = torch_npu.npu_swiglu(gate_up_out)
+    gate_up_out = torch.ops._C._swiglu_fused(gate_up_out)
 
     w2 = w2.transpose(1, 2)
     down_out_list = torch_npu.npu_grouped_matmul(
