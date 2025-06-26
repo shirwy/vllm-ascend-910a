@@ -76,7 +76,7 @@ python3 -m pip install -v -e . --extra-index https://download.pytorch.org/whl/cp
 
 ### 添加新算子以及编译
 
-在`csrc`目录下添加新算子，并在`torch_binding.cpp`下进行binding，具体可见`orch_binding.cpp`下的的`_swiglu`实现以及此目录下的其他算子实现
+在`csrc`目录下添加新算子，并在`torch_binding.cpp`下进行binding，具体可见`torch_binding.cpp`下的的`_swiglu`实现以及此目录下的其他算子实现
 
 编译命令跟`容器内编译`命令一样，在容器内执行，重新编译整个vllm_ascend
 
