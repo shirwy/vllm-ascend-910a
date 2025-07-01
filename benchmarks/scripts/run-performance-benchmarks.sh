@@ -1,5 +1,5 @@
 #!/bin/bash
-export ASCEND_VISIBLE_DEVICES=7
+export ASCEND_RT_VISIBLE_DEVICES=0
 
 export VLLM_BENCHMARK_DIR=/vllm-workspace/vllm/benchmarks
 
@@ -315,8 +315,8 @@ main() {
   ensure_sharegpt_downloaded
   # benchmarks
   # run_serving_tests $QUICK_BENCHMARK_ROOT/tests/serving-tests.json
-  run_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
-  # run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
+  # run_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
+  run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
 
   END_TIME=$(date +%s)
   ELAPSED_TIME=$((END_TIME - START_TIME))
