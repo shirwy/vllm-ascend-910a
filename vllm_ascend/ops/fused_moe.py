@@ -42,6 +42,9 @@ from vllm_ascend.utils import (FusedMoEState, dispose_tensor,
                                get_fused_moe_state, npu_stream_switch,
                                npu_wait_tensor)
 
+import ascend910a_extras.ops as ops
+
+
 MOE_ALL2ALL_BUFFER: bool = envs_ascend.MOE_ALL2ALL_BUFFER
 
 
@@ -606,28 +609,31 @@ def fused_experts_310p(
     group_list = num_tokens_per_expert.cumsum(dim=0).to(torch.int64)
 
     w1 = w1.transpose(1, 2)
-    gate_up_out = torch_npu.npu_grouped_matmul(
-        x=[sorted_hidden_states],
-        weight=[w1],
-        split_item=2,
-        group_list_type=0,
-        group_type=0,
-        group_list=group_list,
-    )[0]
+    # gate_up_out = torch_npu.npu_grouped_matmul(
+    #     x=[sorted_hidden_states],
+    #     weight=[w1],
+    #     split_item=2,
+    #     group_list_type=0,
+    #     group_type=0,
+    #     group_list=group_list,
+    # )[0]
+    gate_up_out = ops.grouped_matmul(sorted_hidden_states, w1, group_list)
 
-    gate_up_out = torch_npu.npu_swiglu(gate_up_out.to(torch.float32)).to(
-        torch.float16)
+    # gate_up_out = torch_npu.npu_swiglu(gate_up_out.to(torch.float32)).to(
+    #     torch.float16)
+    gate_up_out = ops.swiglu(gate_up_out)
     gate_up_out *= topk_scales
 
     w2 = w2.transpose(1, 2)
-    down_out_list = torch_npu.npu_grouped_matmul(
-        x=[gate_up_out],
-        weight=[w2],
-        split_item=2,
-        group_list_type=0,
-        group_type=0,
-        group_list=group_list,
-    )[0]
+    # down_out_list = torch_npu.npu_grouped_matmul(
+    #     x=[gate_up_out],
+    #     weight=[w2],
+    #     split_item=2,
+    #     group_list_type=0,
+    #     group_type=0,
+    #     group_list=group_list,
+    # )[0]
+    down_out_list = ops.grouped_matmul(gate_up_out, w2, group_list)
 
     unsorted_topk_ids = torch.argsort(sorted_topk_ids.float()).to(
         torch.int32) + torch.Tensor([0]).to(torch.int32).npu()
