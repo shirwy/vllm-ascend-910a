@@ -1,5 +1,7 @@
 #!/bin/bash
-export ASCEND_VISIBLE_DEVICES=0
+export ASCEND_VISIBLE_DEVICES=7
+
+export VLLM_BENCHMARK_DIR=/vllm-workspace/vllm/benchmarks
 
 
 check_npus() {
@@ -115,7 +117,7 @@ run_latency_tests() {
     latency_params=$(echo "$params" | jq -r '.parameters')
     latency_args=$(json2args "$latency_params")
 
-    latency_command="python3 vllm_benchmarks/benchmark_latency.py \
+    latency_command="python3 $VLLM_BENCHMARK_DIR/benchmark_latency.py \
       --output-json $RESULTS_FOLDER/${test_name}.json \
       $latency_args"
 
@@ -158,7 +160,7 @@ run_throughput_tests() {
     throughput_params=$(echo "$params" | jq -r '.parameters')
     throughput_args=$(json2args "$throughput_params")
 
-    throughput_command="python3 vllm_benchmarks/benchmark_throughput.py \
+    throughput_command="python3 $VLLM_BENCHMARK_DIR/benchmark_throughput.py \
       --output-json $RESULTS_FOLDER/${test_name}.json \
       $throughput_args"
 
@@ -244,7 +246,7 @@ run_serving_tests() {
 
       new_test_name=$test_name"_qps_"$qps
 
-      client_command="python3 vllm_benchmarks/benchmark_serving.py \
+      client_command="python3 $VLLM_BENCHMARK_DIR/benchmark_serving.py \
         --save-result \
         --result-dir $RESULTS_FOLDER \
         --result-filename ${new_test_name}.json \
@@ -264,7 +266,8 @@ run_serving_tests() {
 }
 
 cleanup() {
-  rm -rf ./vllm_benchmarks
+  # rm -rf ./vllm_benchmarks
+  echo "nop clean"
 }
 
 cleanup_on_error() {
@@ -300,7 +303,7 @@ main() {
   # prepare for benchmarking
   # cd benchmarks || exit 1
   # get_benchmarks_scripts
-  python3 scripts/patch_benchmark_dataset.py --path /vllm-workspace/vllm/benchmarks/benchmark_dataset.py
+  python3 scripts/patch_benchmark_dataset.py --path $VLLM_BENCHMARK_DIR/benchmark_dataset.py
   trap cleanup EXIT
 
   QUICK_BENCHMARK_ROOT=./
