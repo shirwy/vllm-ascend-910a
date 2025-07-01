@@ -2,7 +2,9 @@
 set -x
 export DEVICE=/dev/davinci0
 export NAME=${NAME:-xx_vllm_ascend}
+export PORT=8000
 export PROJECT_DIR=$(dirname $(realpath "${BASH_SOURCE[0]}"))
+export EXTRAS_DIR=$(dirname $(realpath "${BASH_SOURCE[0]}"))/ascend910a-extras
 
 export IMAGE=vllm-ascend-910a
 
@@ -22,7 +24,8 @@ docker run \
 -v /root/.cache:/root/.cache \
 -v /data/models:/data/models \
 -v ${PROJECT_DIR}:/workspace/vllm-ascend \
--p 8000:8000 \
+-v ${EXTRAS_DIR}:/workspace/ascendc910a-extras \
+-p $PORT:$PORT \
 -w /workspace/vllm-ascend \
 -it $IMAGE \
 bash

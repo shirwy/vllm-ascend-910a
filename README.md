@@ -4,9 +4,11 @@
 
 | 序号 | 目标 | 验证方式 | 进度 |
 | - | - | - | - |
-| 1 | 支持aclnnSwiGlu算子 | aclnnSwiGlu算子单算子运行通过/在运行Qwen3时可在图模式检测到aclnnSwiGlu算子 | 第1-2周 |
-| 2 | 支持key_cache等算子 | 跑通DeepSeek-R1模型 | 第2-3周 |
-| 3 | 开发小模型所需融合算子 | - | 第4-5周 |
+| 1 | 支持SwiGlu算子 | aclnnSwiGlu算子单算子运行通过/在运行Qwen3时可在图模式检测到aclnnSwiGlu算子 | 2025.6.25已支持 |
+| 2 | 支持Grouped_Matmul算子 | 四卡910A跑通Qwen3 | 2025.7.1已支持 |
+| 3 | 制作独立库打包本项目开发算子 | 联合编译后跑通Qwen3 | 2025.7.1已打包SwiGlu，Grouped_Matmul算子 |
+| 4 | 根据性能瓶颈开发融合算子 | 性能测试有提升，已知910A多卡通信瓶颈大 | - |
+| 5 | 支持key_cache等算子 | 跑通DeepSeek-R1模型 | - |
 
 ## 统一开发条件
 
@@ -56,12 +58,14 @@ ssh -i /path/to/key.pem root@223.244.40.1
 
 配置流程：使用镜像 vllm-ascend-910a 创建容器，并将本地vllm-ascend映射进去，在容器内编译
 
-进入OpDev-910A路径后运行
+进入OpDev-910A路径后
 ```bash
-./build_container.sh
+vim build_container.sh 
+# 修改DEVICE,NAME,PORT
+sh build_container.sh
 ```
 
-#### 
+## 端到端编译
 进入容器后运行
 ```bash
 export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
@@ -72,7 +76,6 @@ export SOC_VERSION=Ascend910B
 
 python3 -m pip install -v -e . --extra-index https://download.pytorch.org/whl/cpu/
 ```
-
 
 ### 添加新算子以及编译
 
@@ -85,17 +88,34 @@ python3 -m pip install -v -e . --extra-index https://download.pytorch.org/whl/cp
 import torch
 import vllm_ascend.vllm_ascend_C
 
-
 x = torch.randn(2, 2, device=0, dtype=torch.float)
 print(x)
 y = torch.ops._C._swiglu(x)
 print(y)
 ```
 
+## 调用独立库打包算子
+
+在相同根目录下克隆独立库repo
+```bash
+cd ..
+git clone https://github.com/monellz/ascend910a-extras 
+```
+根据该repo的readme编译算子
+
+## 测试方式
+
+编译本repo和独立库repo后，运行benchmarks/ops/llm_test.py来运行Qwen大模型推理
+
+目前支持Qwen3-8B（单卡可跑通），Qwen3-30B-A3B（至少4卡，否则爆显存）
+
+修改卡的数量通过
+```Python
+llm = LLM(model="/data/models/Qwen/Qwen3-30B-A3B",max_model_len=1024,tensor_parallel_size=2)
+```
+
 ## 项目结构
 MindIE-CANN: 不使用aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
-
-vLLM-CANN: 开发aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
 
 
 
