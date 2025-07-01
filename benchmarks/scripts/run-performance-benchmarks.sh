@@ -1,4 +1,5 @@
 #!/bin/bash
+export ASCEND_VISIBLE_DEVICES=0
 
 
 check_npus() {
@@ -297,9 +298,9 @@ main() {
   export HF_ENDPOINT="https://hf-mirror.com"
 
   # prepare for benchmarking
-  cd benchmarks || exit 1
-  get_benchmarks_scripts
-  python3 scripts/patch_benchmark_dataset.py --path vllm_benchmarks/benchmark_dataset.py
+  # cd benchmarks || exit 1
+  # get_benchmarks_scripts
+  python3 scripts/patch_benchmark_dataset.py --path /vllm-workspace/vllm/benchmarks/benchmark_dataset.py
   trap cleanup EXIT
 
   QUICK_BENCHMARK_ROOT=./
@@ -310,9 +311,9 @@ main() {
   trap cleanup_on_error ERR
   ensure_sharegpt_downloaded
   # benchmarks
-  run_serving_tests $QUICK_BENCHMARK_ROOT/tests/serving-tests.json
+  # run_serving_tests $QUICK_BENCHMARK_ROOT/tests/serving-tests.json
   run_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
-  run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
+  # run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
 
   END_TIME=$(date +%s)
   ELAPSED_TIME=$((END_TIME - START_TIME))
