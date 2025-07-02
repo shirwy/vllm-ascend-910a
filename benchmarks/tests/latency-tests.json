@@ -2,7 +2,7 @@
   {
     "test_name": "latency_qwen3_8B_tp1",
     "parameters": {
-      "model": "Qwen/Qwen3-8B",
+      "model": "/data/models/Qwen/Qwen3-8B",
       "tensor_parallel_size": 1,
       "load_format": "dummy",
       "max_model_len": 16384,
