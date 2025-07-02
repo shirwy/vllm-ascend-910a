@@ -200,3 +200,7 @@ kernel_meta/
 
 # ssh-keys
 *.pem
+
+# benchmarks
+benchmarks/results/
+fusion_result.json

@@ -134,6 +134,129 @@ run_latency_tests() {
   done
 }
 
+run_multi_param_latency_tests() {
+  # run latency tests with multiple parameter combinations
+  # $1: a json file specifying base latency test cases
+  # This function will generate multiple test cases with different input-len and output-len
+
+  local latency_test_file
+  latency_test_file=$1
+
+  # Define parameter combinations
+  local input_lens=(128 256 512 1024)
+  local output_lens=(1 2 64 128)
+
+  # Iterate over base latency tests
+  jq -c '.[]' "$latency_test_file" | while read -r params; do
+    # get the base test name
+    base_test_name=$(echo "$params" | jq -r '.test_name')
+    if [[ ! "$base_test_name" =~ ^latency_ ]]; then
+      echo "In latency-test.json, test_name must start with \"latency_\"."
+      exit 1
+    fi
+
+    # if TEST_SELECTOR is set, only run the test cases that match the selector
+    if [[ -n "$TEST_SELECTOR" ]] && [[ ! "$base_test_name" =~ $TEST_SELECTOR ]]; then
+      echo "Skip test case $base_test_name."
+      continue
+    fi
+
+    # get base arguments
+    base_params=$(echo "$params" | jq -r '.parameters')
+    base_args=$(json2args "$base_params")
+
+    # Iterate over parameter combinations
+    for input_len in "${input_lens[@]}"; do
+      for output_len in "${output_lens[@]}"; do
+        # Create test name with parameters
+        test_name="${base_test_name}_input${input_len}_output${output_len}"
+        
+        echo "Running test case $test_name"
+        echo "Parameters: input-len=$input_len, output-len=$output_len"
+
+        # Build command with specific parameters
+        latency_command="python3 $VLLM_BENCHMARK_DIR/benchmark_latency.py \
+          --output-json $RESULTS_FOLDER/${test_name}.json \
+          --input-len $input_len \
+          --output-len $output_len \
+          $base_args"
+
+        echo "Latency command: $latency_command"
+
+        # run the benchmark
+        eval "$latency_command"
+        
+        # Add model_name and parameters to result file
+        model_name=$(echo "$base_params" | jq -r '.model')
+        update_json_field "$RESULTS_FOLDER/${test_name}.json" "model_name" "$model_name"
+        update_json_field "$RESULTS_FOLDER/${test_name}.json" "input_len" "$input_len"
+        update_json_field "$RESULTS_FOLDER/${test_name}.json" "output_len" "$output_len"
+        
+        kill_npu_processes
+      done
+    done
+  done
+}
+
+run_msprof_latency_tests() {
+  # run latency tests with msprof performance profiling
+  # $1: a json file specifying latency test cases
+  # This function uses msprof to collect performance data during latency testing
+
+  local latency_test_file
+  latency_test_file=$1
+
+  # Create msprof output directory
+  local msprof_output_dir="$RESULTS_FOLDER/msprof_data"
+  mkdir -p "$msprof_output_dir"
+
+  # Iterate over latency tests
+  jq -c '.[]' "$latency_test_file" | while read -r params; do
+    # get the test name
+    test_name=$(echo "$params" | jq -r '.test_name')
+    if [[ ! "$test_name" =~ ^latency_ ]]; then
+      echo "In latency-test.json, test_name must start with \"latency_\"."
+      exit 1
+    fi
+
+    # if TEST_SELECTOR is set, only run the test cases that match the selector
+    if [[ -n "$TEST_SELECTOR" ]] && [[ ! "$test_name" =~ $TEST_SELECTOR ]]; then
+      echo "Skip test case $test_name."
+      continue
+    fi
+
+    # get arguments
+    latency_params=$(echo "$params" | jq -r '.parameters')
+    latency_args=$(json2args "$latency_params")
+
+    # Create msprof output directory for this test
+    local test_msprof_dir="$msprof_output_dir/${test_name}_input128_output1"
+    mkdir -p "$test_msprof_dir"
+
+    # Build msprof command with specific parameters (input=128, output=1)
+    msprof_command="msprof --output=$test_msprof_dir --type=text python3 $VLLM_BENCHMARK_DIR/benchmark_latency.py \
+      --output-json $RESULTS_FOLDER/${test_name}_msprof_input128_output1.json \
+      --input-len 128 \
+      --output-len 1 \
+      $latency_args"
+
+    echo "Running msprof test case $test_name with input=128, output=1"
+    echo "msprof command: $msprof_command"
+
+    # run the benchmark with msprof
+    eval "$msprof_command"
+    
+    # Add model_name and parameters to result file
+    model_name=$(echo "$latency_params" | jq -r '.model')
+    update_json_field "$RESULTS_FOLDER/${test_name}_msprof_input128_output1.json" "model_name" "$model_name"
+    update_json_field "$RESULTS_FOLDER/${test_name}_msprof_input128_output1.json" "input_len" "128"
+    update_json_field "$RESULTS_FOLDER/${test_name}_msprof_input128_output1.json" "output_len" "1"
+    update_json_field "$RESULTS_FOLDER/${test_name}_msprof_input128_output1.json" "msprof_data_dir" "$test_msprof_dir"
+    
+    kill_npu_processes
+  done
+}
+
 run_throughput_tests() {
   # run throughput tests using `benchmark_throughput.py`
   # $1: a json file specifying throughput test cases
@@ -316,7 +439,9 @@ main() {
   # benchmarks
   # run_serving_tests $QUICK_BENCHMARK_ROOT/tests/serving-tests.json
   # run_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
-  run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
+  run_msprof_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
+  # run_multi_param_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
+  # run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
 
   END_TIME=$(date +%s)
   ELAPSED_TIME=$((END_TIME - START_TIME))

@@ -11,6 +11,8 @@ CUR_PATH = Path(__file__).parent.resolve()
 latency_results = []
 latency_column_mapping = {
     "test_name": "Test name",
+    "input_len": "Input length",
+    "output_len": "Output length",
     "avg_latency": "Mean latency (ms)",
     "P50": "Median latency (ms)",
     "P99": "P99 latency (ms)",
@@ -101,7 +103,7 @@ if __name__ == "__main__":
             serving_results.append(raw_result)
             continue
 
-        elif "latency" in f.name:
+        elif "latency" in str(test_file):
             # this result is generated via `benchmark_latency.py`
 
             # update the test name of this result
@@ -118,7 +120,7 @@ if __name__ == "__main__":
             latency_results.append(raw_result)
             continue
 
-        elif "throughput" in f.name:
+        elif "throughput" in str(test_file):
             # this result is generated via `benchmark_throughput.py`
 
             # update the test name of this result
@@ -129,11 +131,15 @@ if __name__ == "__main__":
             continue
 
         print(f"Skipping {test_file}")
+    
+    # Sort results for consistent output
     serving_results.sort(key=lambda x: (len(x['test_name']), x['test_name']))
+    latency_results.sort(key=lambda x: (len(x['test_name']), x['test_name']))
 
-    latency_results = pd.DataFrame.from_dict(latency_results)
-    serving_results = pd.DataFrame.from_dict(serving_results)
-    throughput_results = pd.DataFrame.from_dict(throughput_results)
+    # Convert to DataFrames
+    latency_results = pd.DataFrame.from_dict(latency_results) if latency_results else pd.DataFrame()
+    serving_results = pd.DataFrame.from_dict(serving_results) if serving_results else pd.DataFrame()
+    throughput_results = pd.DataFrame.from_dict(throughput_results) if throughput_results else pd.DataFrame()
 
     raw_results_json = results_to_json(latency_results, throughput_results,
                                        serving_results)
@@ -160,15 +166,15 @@ if __name__ == "__main__":
     latency_md_table = tabulate(latency_results,
                                 headers='keys',
                                 tablefmt='pipe',
-                                showindex=False)
+                                showindex=False) if not latency_results.empty else "No latency results available"
     serving_md_table = tabulate(serving_results,
                                 headers='keys',
                                 tablefmt='pipe',
-                                showindex=False)
+                                showindex=False) if not serving_results.empty else "No serving results available"
     throughput_md_table = tabulate(throughput_results,
                                    headers='keys',
                                    tablefmt='pipe',
-                                   showindex=False)
+                                   showindex=False) if not throughput_results.empty else "No throughput results available"
 
     # document the result
     print(output_folder)
