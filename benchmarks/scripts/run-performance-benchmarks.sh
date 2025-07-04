@@ -438,8 +438,8 @@ main() {
   ensure_sharegpt_downloaded
   # benchmarks
   # run_serving_tests $QUICK_BENCHMARK_ROOT/tests/serving-tests.json
-  # run_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
-  run_msprof_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
+  run_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
+  # run_msprof_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
   # run_multi_param_latency_tests $QUICK_BENCHMARK_ROOT/tests/latency-tests.json
   # run_throughput_tests $QUICK_BENCHMARK_ROOT/tests/throughput-tests.json
 
