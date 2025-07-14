@@ -114,6 +114,17 @@ git clone https://github.com/monellz/ascend910a-extras
 llm = LLM(model="/data/models/Qwen/Qwen3-30B-A3B",max_model_len=1024,tensor_parallel_size=2)
 ```
 
+## 性能优化工具
+
+参考资料：https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/800alpha001/devaids/opdev/optool/atlasopdev_16_0092.html
+- 记录算子级性能
+```bash
+export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/aarch64-linux/simulator/Ascend910A/lib:$LD_LIBRARY_PATH && export ASCEND_SIMULATOR_MODE=1 && msprof op simulator --applicatrs.py" --soc-version=Ascend910B1 --output=./results/msprof_op
+```
+- 可视化工具：
+https://ui.perfetto.dev/
+chrome浏览器：chrome://tracing/
+
 ## 项目结构
 MindIE-CANN: 不使用aclnnSwiGlu算子跑通qwen3模型的所需代码和流程
 

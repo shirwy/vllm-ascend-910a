@@ -226,6 +226,51 @@ def benchmark_swiglu(batch_size, seq_len, hidden_dim, dtype=torch.float16):
     
     return print_benchmark_result(flops, sec, total_bytes)
 
+def benchmark_add_rms_norm(num_tokens, dim, dtype=torch.float16):
+    """Benchmark Add + RMSNorm fused operator"""
+    print(f"\n=== Add + RMSNorm Benchmark ===")
+    print(f"Num tokens: {num_tokens}, Dim: {dim}")
+    
+    # Import the add_rms_norm operator
+    import ascend910a_extras.ops as ops
+    
+    # Create input tensors
+    x = torch.randn(num_tokens, dim, dtype=dtype, device="npu")
+    residual = torch.randn(num_tokens, dim, dtype=dtype, device="npu")
+    weight = torch.randn(dim, dtype=dtype, device="npu")
+    epsilon = 1e-6
+    
+    def add_rms_norm_fn():
+        # Use NPU optimized Add + RMSNorm operator
+        return ops.add_rms_norm(x, residual, weight, epsilon)
+    
+    sec = do_bench(add_rms_norm_fn)
+    
+    # Calculate FLOPs for Add + RMSNorm:
+    # 1. Add: batch_size * seq_len * hidden_dim additions
+    # 2. Square: batch_size * seq_len * hidden_dim multiplications
+    # 3. Sum reduction: batch_size * seq_len * hidden_dim additions
+    # 4. Sqrt + epsilon: batch_size * seq_len operations
+    # 5. Division: batch_size * seq_len * hidden_dim divisions
+    # 6. Weight multiplication: batch_size * seq_len * hidden_dim multiplications
+    flops = (num_tokens * dim +  # Add
+             num_tokens * dim +  # Square
+             num_tokens * dim +  # Sum reduction
+             num_tokens +               # Sqrt + epsilon
+             num_tokens * dim +  # Division
+             num_tokens * dim)   # Weight multiplication
+    flops = 6 * num_tokens * dim  # Simplified approximation
+    
+    # 计算内存访问量
+    bytes_per_element = 2 if dtype == torch.float16 else 4
+    # Add + RMSNorm带宽：
+    # 读取: x + residual + weight
+    # 写入: output
+    total_bytes = (num_tokens * dim * 3 +  # x, residual, output
+                   dim) * bytes_per_element  # weight
+    
+    return print_benchmark_result(flops, sec, total_bytes)
+
 def main():
     """Main function to run all benchmarks"""
     print("Starting PyTorch NPU Operator Benchmarks")
@@ -259,6 +304,10 @@ def main():
             "batch_size": 1,
             "seq_len": 16384,
             "hidden_dim": 4096
+        },
+        "add_rms_norm": {
+            "num_tokens": 16384,
+            "dim": 4096
         }
     }
     
@@ -275,6 +324,9 @@ def main():
     
     # Run swiglu benchmark
     results["swiglu"] = benchmark_swiglu(**configs["swiglu"])
+    
+    # Run add_rms_norm benchmark
+    results["add_rms_norm"] = benchmark_add_rms_norm(**configs["add_rms_norm"])
 
 if __name__ == "__main__":
     main()
