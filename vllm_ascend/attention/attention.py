@@ -41,6 +41,8 @@ from vllm_ascend.utils import (ACL_FORMAT_FRACTAL_NZ, aligned_16,
 from vllm_ascend.worker.model_runner import (
     ModelInputForNPUBuilder, ModelInputForNPUWithSamplingMetadata)
 
+import ascend910a_extras.ops as ops
+
 _ALLOWED_NUM_QUERIES_PER_KV = [32, 64, 128]
 
 
@@ -834,11 +836,16 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 seq_lens_tensor_cpu=self.seq_lens_tensor_cpu)
         else:
             if self.key_cache is not None:
-                torch_npu._npu_reshape_and_cache(key=key,
-                                                 value=value,
-                                                 key_cache=self.key_cache,
-                                                 value_cache=self.value_cache,
-                                                 slot_indices=slots)
+                # torch_npu._npu_reshape_and_cache(key=key,
+                #                                  value=value,
+                #                                  key_cache=self.key_cache,
+                #                                  value_cache=self.value_cache,
+                #                                  slot_indices=slots)
+                ops.reshape_and_cache(key=key,
+                                       value=value,
+                                       key_cache=self.key_cache,
+                                       value_cache=self.value_cache,
+                                       slot_indices=slots)
 
             if attn_metadata.num_prefills > 0:
                 # Prefix cache disabled  and  chunk prefill disabled  or  no prefix cache hit
