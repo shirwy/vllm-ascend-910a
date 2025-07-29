@@ -30,6 +30,7 @@ class AscendConfig:
         torchair_graph_config = additional_config.get("torchair_graph_config",
                                                       {})
         self.torchair_graph_config = TorchairGraphConfig(torchair_graph_config)
+        self.atb_graph_enabled = additional_config.get("atb_graph_enabled", False)
 
         ascend_scheduler_config = additional_config.get(
             "ascend_scheduler_config", {})

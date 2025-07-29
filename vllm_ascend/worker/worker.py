@@ -156,7 +156,7 @@ class NPUWorker(LocalOrDistributedWorkerBase):
                     torch_npu.profiler.ProfilerActivity.CPU,
                     torch_npu.profiler.ProfilerActivity.NPU,
                 ],
-                with_stack=False,
+                with_stack=True,
                 profile_memory=False,
                 with_modules=False,
                 experimental_config=experimental_config,
@@ -242,12 +242,18 @@ class NPUWorker(LocalOrDistributedWorkerBase):
     def start_profile(self):
         if self.profiler is None:
             raise RuntimeError("Profiler is not enabled.")
+        logger.info(f"[910a] start profile")
         self.profiler.start()
 
     def stop_profile(self):
         if self.profiler is None:
             raise RuntimeError("Profiler is not enabled.")
         self.profiler.stop()
+        logger.info(f"[910a] stop profile")
+        torch_profiler_trace_dir = envs.VLLM_TORCH_PROFILER_DIR
+        import datetime
+        date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.profiler.export_chrome_trace(f'{torch_profiler_trace_dir}/trace-{date_str}.json')
 
     def save_sharded_state(
         self,
@@ -333,7 +339,8 @@ class NPUWorker(LocalOrDistributedWorkerBase):
         with context:
             with set_current_vllm_config(self.vllm_config):
                 self._init_cache_engine()
-        self._warm_up_model()
+        # self._warm_up_model()
+        self._warm_up_and_capture_graph()
 
     def _init_cache_engine(self):
         assert self.cache_config.num_gpu_blocks is not None
@@ -371,6 +378,16 @@ class NPUWorker(LocalOrDistributedWorkerBase):
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
+    
+    def _warm_up_and_capture_graph(self) -> None:
+        logger.info(f"[910a] warm up and capture graph")
+        if self.model_runner.atb_graph_enabled:
+            logger.info(f"[910a] capture graph")
+            self.model_runner.capture_model(self.gpu_cache)
+        else:
+            logger.info(f"[910a] not capture graph")
+        set_random_seed(self.model_config.seed)
+
 
     @property
     def do_metadata_broadcast(self) -> bool:
@@ -383,6 +400,7 @@ class NPUWorker(LocalOrDistributedWorkerBase):
     @torch.inference_mode()
     def prepare_worker_input(
             self, execute_model_req: ExecuteModelRequest) -> WorkerInput:
+        # logger.info(f"[910a] prepare_worker_input")
         virtual_engine = execute_model_req.virtual_engine
         num_steps = execute_model_req.num_steps
         num_seq_groups = len(execute_model_req.seq_group_metadata_list)
@@ -415,6 +433,7 @@ class NPUWorker(LocalOrDistributedWorkerBase):
 
     @torch.inference_mode()
     def execute_worker(self, worker_input: WorkerInput) -> None:
+        # logger.info(f"[910a] execute_worker")
         if self.enable_dummy_run:
             logger.debug(
                 f"send notify to the dp proxy: {self.dp_proxy_monitor_addr}")

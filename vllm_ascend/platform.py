@@ -157,6 +157,11 @@ class NPUPlatform(Platform):
                 "Fallback to eager mode.")
             ascend_config.torchair_graph_config.enabled = False
             enforce_eager = True
+        
+        if ascend_config.atb_graph_enabled:
+            logger.info("ATB graph mode enabled")
+            enforce_eager = True
+            # ascend_config.torchair_graph_config.enabled = True
 
         check_ascend_config(vllm_config, enforce_eager)
 

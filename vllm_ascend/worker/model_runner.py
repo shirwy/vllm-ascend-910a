@@ -30,12 +30,12 @@ import torch
 import torch.nn as nn
 import vllm.envs as envs
 from vllm.attention import AttentionMetadata, get_attn_backend
-from vllm.attention.backends.utils import CommonAttentionState
+from vllm.attention.backends.utils import CommonAttentionState, PAD_SLOT_ID
 from vllm.config import VllmConfig
 from vllm.core.scheduler import SchedulerOutputs
 from vllm.distributed import broadcast_tensor_dict, get_dp_group, get_pp_group
 from vllm.distributed.kv_transfer import get_kv_transfer_group
-from vllm.forward_context import set_forward_context
+from vllm.forward_context import set_forward_context, get_forward_context
 from vllm.inputs import INPUT_REGISTRY, InputRegistry
 from vllm.logger import logger
 from vllm.lora.layers import LoRAMapping
@@ -66,6 +66,11 @@ from vllm.worker.model_runner_base import (
     _init_sampling_metadata_from_tensor_dict)
 
 from vllm_ascend.ascend_config import get_ascend_config
+
+import time
+from tqdm import tqdm
+import ascend910a_extras.graph as atb_graph
+
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -592,8 +597,17 @@ class ModelInputForNPUBuilder(ModelRunnerInputBuilderBase[ModelInputForNPU]):
         if self.runner.torchair_graph_enabled:
             graph_pad_size = self.runner.scheduler_config.max_num_seqs - len(
                 seq_lens)
+        elif self.runner.atb_graph_enabled:
+            # find closest batch size
+            capture_sizes = self.runner.vllm_config.compilation_config.cudagraph_capture_sizes
+            for batch_size in reversed(capture_sizes):
+                if batch_size >= len(seq_lens):
+                    graph_pad_size = batch_size - len(seq_lens)
+                    break
+            assert graph_pad_size != -1
         else:
             graph_pad_size = -1
+        # logger.info(f"[910a] graph_pad_size: {graph_pad_size}")
 
         if input_positions:
             input_positions = flatten_2d_lists(input_positions)
@@ -927,6 +941,7 @@ class NPUModelRunnerBase(ModelRunnerBase[TModelInputForNPU]):
 
         ascend_config = get_ascend_config()
         self.torchair_graph_enabled = ascend_config.torchair_graph_config.enabled
+        self.atb_graph_enabled = ascend_config.atb_graph_enabled
         self.use_cached_npu_graph = ascend_config.torchair_graph_config.use_cached_graph
 
         self.has_inner_state = model_config.has_inner_state
@@ -987,6 +1002,10 @@ class NPUModelRunnerBase(ModelRunnerBase[TModelInputForNPU]):
               SamplingMetadataCache() \
                 if self.parallel_config.pipeline_parallel_size == 1 else None
         self.sampler = get_sampler()
+
+        # for atb graph
+        self.atb_graph_runner = {} # bs -> (Context, Graph, y)
+        self.atb_graph_buffers = {} # str -> tensor
 
     def get_model(self) -> nn.Module:
         return self.model
@@ -1103,6 +1122,9 @@ class NPUModelRunnerBase(ModelRunnerBase[TModelInputForNPU]):
         - input_tokens[:num_prefill_tokens] contains prefill tokens.
         - input_tokens[num_prefill_tokens:] contains decode tokens.
         """
+        # logger.info(f"[910a] length of seq_group_metadata_list: {len(seq_group_metadata_list)}")
+        # logger.info(f"[910a] finished_requests_ids: {finished_requests_ids}")
+
         builder = self._builder_cls(weakref.proxy(self), finished_requests_ids)
         builder.prepare(finished_requests_ids)
         for seq_group_metadata in seq_group_metadata_list:
@@ -1119,9 +1141,130 @@ class NPUModelRunnerBase(ModelRunnerBase[TModelInputForNPU]):
             yield
         finally:
             self.in_profile_run = False
+    
+    @torch.inference_mode()
+    def capture_model(self, kv_caches: List[torch.Tensor]) -> None:
+        logger.info(f"[910a] capture_model")
+        start_time = time.perf_counter()
+
+        max_batch_size = self.max_batchsize_to_capture
+        logger.info(f"[910a] max_batch_size: {max_batch_size}")
+        input_tokens = torch.zeros(max_batch_size, dtype=torch.long, device=self.device)
+        input_positions = torch.zeros(max_batch_size, dtype=torch.int32, device=self.device)
+        assert not self.model_config.uses_mrope
+        assert self.parallel_config.pipeline_parallel_size == 1
+        assert self.lora_config is None
+
+        capture_sizes = self.vllm_config.compilation_config.cudagraph_capture_sizes
+        logger.info(f"[910a] capture_sizes: {capture_sizes}")
+
+        _graph_slot_mapping = torch.full((max_batch_size,), PAD_SLOT_ID, dtype=torch.int32, device=self.device)
+        _graph_seq_lens = torch.ones(max_batch_size, dtype=torch.int32, device=self.device)
+        _graph_block_tables = torch.from_numpy(self.graph_block_tables).to(device=self.device)
+        cos_sin_cache = self.model.model.layers[0].self_attn.rotary_emb.cos_sin_cache
+        # logger.info(f"[910a] cos_sin_cache.shape: {cos_sin_cache.shape}")
+        # logger.info(f"[910a] cos_sin_cache.dtype: {cos_sin_cache.dtype}")
+        # logger.info(f"[910a] cos_sin_cache.stride: {cos_sin_cache.stride()}")
+        cos_cache, sin_cache = cos_sin_cache.split(cos_sin_cache.shape[-1] // 2, dim=-1)
+        cos_cache = cos_cache.contiguous()
+        sin_cache = sin_cache.contiguous()
+
+        self.atb_graph_buffers["input_ids"] = input_tokens
+        self.atb_graph_buffers["positions"] = input_positions
+        self.atb_graph_buffers["slot_mapping"] = _graph_slot_mapping
+        self.atb_graph_buffers["block_tables"] = _graph_block_tables
+        self.atb_graph_buffers["seq_lens"] = _graph_seq_lens
+        self.atb_graph_buffers["cos_cache"] = cos_cache
+        self.atb_graph_buffers["sin_cache"] = sin_cache
+
+        atb_graph_config = atb_graph.GraphConfig()
+        atb_graph_config.hidden_size = self.model_config.get_hidden_size()
+        atb_graph_config.num_heads = self.model_config.get_num_attention_heads(self.parallel_config)
+        atb_graph_config.num_kv_heads = self.model_config.get_num_kv_heads(self.parallel_config)
+        atb_graph_config.intermediate_size = self.model_config.hf_config.intermediate_size
+        atb_graph_config.num_layers = self.model_config.get_num_layers(self.parallel_config)
+        atb_graph_config.rms_norm_eps = self.model_config.hf_config.rms_norm_eps
+
+        weights = []
+        num_layers = self.model_config.get_num_layers(self.parallel_config)
+        weights.append(self.model.model.embed_tokens.weight.data)
+        for i in range(num_layers):
+            weights.append(self.model.model.layers[i].input_layernorm.weight.data)
+            weights.append(self.model.model.layers[i].self_attn.qkv_proj.weight.data)
+            weights.append(self.model.model.layers[i].self_attn.q_norm.weight.data)
+            weights.append(self.model.model.layers[i].self_attn.k_norm.weight.data)
+            weights.append(self.model.model.layers[i].self_attn.o_proj.weight.data)
+            weights.append(self.model.model.layers[i].post_attention_layernorm.weight.data)
+            weights.append(self.model.model.layers[i].mlp.gate_up_proj.weight.data)
+            weights.append(self.model.model.layers[i].mlp.down_proj.weight.data)
+        weights.append(self.model.model.norm.weight.data)
+        workspace_size = 0
+        # for batch_size in tqdm([4], desc="Capturing model"):
+        for batch_size in tqdm(capture_sizes, desc="Capturing model"):
+            attn_metadata = self.attn_backend.make_metadata(
+                num_prefills=0,
+                num_prefill_tokens=0,
+                num_decode_tokens=batch_size,
+                slot_mapping=_graph_slot_mapping[:batch_size],
+                enable_kv_scales_calculation=False,
+                multi_modal_placeholder_index_maps=None,
+                seq_lens=None,
+                seq_lens_tensor=_graph_seq_lens[:batch_size],
+                max_query_len=1,
+                max_prefill_seq_len=0,
+                max_decode_seq_len=self.max_seq_len_to_capture,
+                chunked_prefill_enabled=False,
+                block_tables=_graph_block_tables[:batch_size],
+            )
+
+            capture_inputs = {
+                "input_ids": self.atb_graph_buffers["input_ids"][:batch_size],
+                "key_caches": [c[0] for c in kv_caches[0]],
+                "value_caches": [c[1] for c in kv_caches[0]],
+                "positions": self.atb_graph_buffers["positions"][:batch_size],
+                "attn_metadata": attn_metadata,
+                "cos_cache": self.atb_graph_buffers["cos_cache"],
+                "sin_cache": self.atb_graph_buffers["sin_cache"],
+            }
+
+            atb_graph_config.batch_size = batch_size
+
+            # atb graph inputs:
+            # token_ids, key_cache, value_cache, position_ids, slot_mapping, block_tables, context_lens
+
+            g = atb_graph.Graph(atb_graph_config)
+            num_split = 4
+            # num_split = 2
+            g.build_model(num_split)
+            ctx = atb_graph.Context()
+            y = torch.zeros(batch_size, self.model_config.get_hidden_size(), dtype=self.model_config.dtype, device=self.device)
+            current_workspace_size = ctx.setup(
+                g,
+                capture_inputs["input_ids"],
+                capture_inputs["key_caches"],
+                capture_inputs["value_caches"],
+                capture_inputs["positions"],
+                capture_inputs["attn_metadata"].slot_mapping,
+                capture_inputs["attn_metadata"].block_tables,
+                capture_inputs["attn_metadata"].seq_lens_tensor,
+                capture_inputs["cos_cache"],
+                capture_inputs["sin_cache"],
+                weights,
+                y,
+            )
+            workspace_size = max(workspace_size, current_workspace_size)
+            self.atb_graph_runner[batch_size] = (ctx, g, y)
+        logger.info(f"[910a] workspace_size: {workspace_size} bytes ({(workspace_size / 1024 / 1024)} MiB)")
+        self.atb_graph_buffers["workspace"] = torch.zeros(workspace_size, dtype=torch.uint8, device=self.device)
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        logger.info(f"[910a] capture_model time: {elapsed_time:.4f} seconds")
+
 
     @torch.inference_mode()
     def profile_run(self) -> None:
+        logger.info(f"[910a] profile_run")
         with self.set_in_profile_run():
             # Enable top-k sampling to reflect the accurate memory usage.
             sampling_params = \
@@ -1296,6 +1439,7 @@ class NPUModelRunner(NPUModelRunnerBase[ModelInputForNPUWithSamplingMetadata]):
         - input_tokens[:num_prefill_tokens] contains prefill tokens.
         - input_tokens[num_prefill_tokens:] contains decode tokens.
         """
+        # logger.info(f"[910a] prepare_model_input")
         model_input = self._prepare_model_input_tensors(
             seq_group_metadata_list, finished_requests_ids)
         if get_pp_group().is_last_rank:
@@ -1335,6 +1479,8 @@ class NPUModelRunner(NPUModelRunnerBase[ModelInputForNPUWithSamplingMetadata]):
         num_steps: int = 1,
         **kwargs,
     ) -> Optional[Union[List[SamplerOutput], IntermediateTensors]]:
+        batch_size = model_input.input_tokens.shape[0]
+        logger.info(f"[910a] execute_model {batch_size=}")
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in ModelRunner")
 
@@ -1379,6 +1525,51 @@ class NPUModelRunner(NPUModelRunnerBase[ModelInputForNPUWithSamplingMetadata]):
                                 dtype=previous_hidden_states.dtype,
                                 device=previous_hidden_states.device)
                 ])
+        elif prefill_meta is None and self.atb_graph_enabled:
+            def _model_forward(
+                input_ids: torch.Tensor,
+                inputs_embeds: Optional[torch.Tensor],
+                positions: torch.Tensor,
+                intermediate_tensors: Optional[IntermediateTensors],
+                **kwargs,
+            ) -> torch.Tensor:
+                assert inputs_embeds is None
+                batch_size = input_ids.shape[0]
+                stream = torch.npu.current_stream().npu_stream
+                # logger.info(f"[910a] _model_forward start {batch_size=} {hex(stream)=}")
+                # logger.info(f"[910a] {input_ids=}")
+
+                # out_ref = self.model(
+                #     input_ids=input_ids,
+                #     inputs_embeds=inputs_embeds,
+                #     positions=positions,
+                #     intermediate_tensors=intermediate_tensors,
+                #     **kwargs,
+                # )
+                # logger.info(f"[910a] {out_ref.shape=} {out_ref.dtype=}")
+                # logger.info(f"[910a] {out_ref=}")
+
+                # prepare
+                ctx, g, y = self.atb_graph_runner[batch_size]
+                attn_metadata = get_forward_context().attn_metadata
+
+                self.atb_graph_buffers["input_ids"][:batch_size].copy_(input_ids, non_blocking=True)
+                self.atb_graph_buffers["positions"][:batch_size].copy_(positions, non_blocking=True)
+                self.atb_graph_buffers["slot_mapping"][:batch_size].copy_(attn_metadata.slot_mapping, non_blocking=True)
+                self.atb_graph_buffers["block_tables"].copy_(attn_metadata.block_tables, non_blocking=True)
+                self.atb_graph_buffers["seq_lens"][:batch_size].copy_(attn_metadata.seq_lens_tensor, non_blocking=True)
+
+                workspace = self.atb_graph_buffers["workspace"]
+                
+                ctx.run_with_dummy_setup(g, workspace)
+                out = y
+                # logger.info(f"[910a] {out.shape=} {out.dtype=}")
+                # logger.info(f"[910a] {out=}")
+
+                # logger.info(f"[910a] _model_forward end")
+                return out
+            
+            model_executable = _model_forward
         else:
             model_executable = self.model
 
