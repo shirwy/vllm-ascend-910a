@@ -97,7 +97,7 @@ jobs:
 
       - name: Download Artifact
         if: ${{ steps.get_run_id.outputs.runid != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: ${{ github.event.inputs.vllm-ascend-branch }}-${{ steps.get_basename.outputs.model_base_name }}-V${{ matrix.version }}-report
           path: ./docs/source/developer_guide/evaluation/accuracy_report_bak
@@ -126,7 +126,7 @@ jobs:
         run: mkdir -p ./accuracy/accuracy_report
 
       - name: Download only current run reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: ./docs/source/developer_guide/evaluation/accuracy_report
           pattern: report-*
