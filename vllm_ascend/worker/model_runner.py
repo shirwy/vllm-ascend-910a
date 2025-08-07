@@ -1480,7 +1480,7 @@ class NPUModelRunner(NPUModelRunnerBase[ModelInputForNPUWithSamplingMetadata]):
         **kwargs,
     ) -> Optional[Union[List[SamplerOutput], IntermediateTensors]]:
         batch_size = model_input.input_tokens.shape[0]
-        logger.info(f"[910a] execute_model {batch_size=}")
+        #logger.info(f"[910a] execute_model {batch_size=}")
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in ModelRunner")
 

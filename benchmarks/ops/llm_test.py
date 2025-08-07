@@ -7,7 +7,7 @@ prompts = [
 ]
 sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
 # The first run will take about 3-5 mins (10 MB/s) to download models
-llm = LLM(model="/data/models/Qwen/Qwen3-30B-A3B",max_model_len=1024,tensor_parallel_size=4)
+llm = LLM(model="/home/ma-user/aicc/Qwen/Qwen3-30B-A3B/",max_model_len=1024,tensor_parallel_size=4)
 
 outputs = llm.generate(prompts, sampling_params)
 
