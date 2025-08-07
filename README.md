@@ -22,7 +22,7 @@ python3 -m pip install -v -e . --extra-index https://download.pytorch.org/whl/cp
 ```bash
 git clone https://github.com/shirwy/ascend-ops
 ```
-
+- 算子编译参考https://github.com/shirwy/ascend-ops
 ## 测试方式
 
 运行benchmarks/ops/llm_test.py来运行Qwen大模型推理
