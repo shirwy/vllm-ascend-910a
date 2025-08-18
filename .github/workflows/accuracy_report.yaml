@@ -62,7 +62,7 @@ jobs:
     name: Download ${{ matrix.model }} V${{ matrix.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.vllm-ascend-branch }}
 
@@ -118,7 +118,7 @@ jobs:
     needs: download_reports
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.vllm-ascend-branch }}
 

@@ -138,7 +138,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check npu and CANN info
         run: |
@@ -159,7 +159,7 @@ jobs:
           apt-get -y install gcc g++ cmake libnuma-dev
 
       - name: Checkout vllm-project/vllm repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: vllm-project/vllm
           path: ./vllm-empty
@@ -171,7 +171,7 @@ jobs:
         run: VLLM_TARGET_DEVICE=empty pip install -e .
 
       - name: Checkout vllm-project/vllm-ascend repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: vllm-project/vllm-ascend
           path: ./vllm-ascend
